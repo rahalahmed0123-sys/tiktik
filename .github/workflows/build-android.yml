@@ -1,0 +1,77 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --clean
+        env:
+          EXPO_NO_TELEMETRY: 1
+          NODE_ENV: production
+
+      - name: Make gradlew executable
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g"
+          NODE_ENV: production
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp android/app/build/outputs/apk/release/app-release*.apk output/netflixy.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: netflixy-android
+          path: output/netflixy.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Netflixy v${{ github.run_number }}"
+          body: |
+            Download netflixy.apk, enable "Install unknown apps" in Android settings, then install.
+          files: output/netflixy.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
